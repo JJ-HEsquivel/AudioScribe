@@ -1,0 +1,423 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>AudioScribe</title>
+  <style>
+    :root {
+      --bg: #f6f7f9;
+      --card: #ffffff;
+      --text: #1b1f24;
+      --muted: #5f6b7a;
+      --border: #dde2e8;
+      --accent: #2f6fed;
+      --accent-text: #ffffff;
+      --error: #c62828;
+      --ok: #2e7d32;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #111418;
+        --card: #1a1f25;
+        --text: #e8ecf1;
+        --muted: #9aa6b4;
+        --border: #2c333c;
+        --accent: #5b8cff;
+        --accent-text: #0b0e12;
+        --error: #ff6b6b;
+        --ok: #66bb6a;
+      }
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.5;
+    }
+    main { max-width: 860px; margin: 0 auto; padding: 32px 16px 64px; }
+    h1 { margin: 0 0 4px; font-size: 1.8rem; }
+    .sub { color: var(--muted); margin: 0 0 24px; }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 20px;
+      margin-bottom: 16px;
+    }
+    .row { display: flex; flex-wrap: wrap; gap: 12px; align-items: end; }
+    label.field { display: flex; flex-direction: column; gap: 4px; font-size: .85rem; color: var(--muted); }
+    select {
+      padding: 8px 10px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      background: var(--card);
+      color: var(--text);
+      font-size: .95rem;
+    }
+    button, .btn {
+      display: inline-block;
+      padding: 9px 16px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      background: var(--card);
+      color: var(--text);
+      font: inherit;
+      font-size: .95rem;
+      cursor: pointer;
+      user-select: none;
+    }
+    .primary { background: var(--accent); border-color: var(--accent); color: var(--accent-text); font-weight: 600; }
+    button:disabled { opacity: .5; cursor: not-allowed; }
+    /* Visually hidden but still clickable through its <label>. */
+    #file { position: absolute; width: 1px; height: 1px; opacity: 0; overflow: hidden; }
+    #fileInfo { margin-top: 12px; color: var(--muted); font-size: .92rem; }
+    audio { width: 100%; margin-top: 12px; }
+    #status { margin-top: 14px; font-size: .92rem; color: var(--muted); min-height: 1.4em; }
+    #status.error { color: var(--error); }
+    #work {
+      margin-top: 16px;
+      padding: 14px 16px;
+      border: 1px solid var(--accent);
+      border-radius: 10px;
+    }
+    #work.ok { border-color: var(--ok); }
+    #work.fail { border-color: var(--error); }
+    .work-head { display: flex; align-items: center; gap: 10px; font-size: 1.05rem; }
+    #workPct { margin-left: auto; font-weight: 700; color: var(--accent); font-variant-numeric: tabular-nums; }
+    #workDetail { margin-top: 6px; color: var(--muted); font-size: .88rem; font-variant-numeric: tabular-nums; }
+    progress { width: 100%; height: 10px; margin-top: 10px; accent-color: var(--accent); }
+    .spinner {
+      width: 18px; height: 18px; flex: none;
+      border: 3px solid var(--border);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin .8s linear infinite;
+    }
+    #work.ok .spinner, #work.fail .spinner { animation: none; border-color: transparent; width: auto; height: auto; }
+    #work.ok .spinner::before { content: "✓"; color: var(--ok); font-weight: 700; }
+    #work.fail .spinner::before { content: "✕"; color: var(--error); font-weight: 700; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    #output.live::after {
+      content: "▍";
+      color: var(--accent);
+      animation: blink 1s steps(1) infinite;
+    }
+    @keyframes blink { 50% { opacity: 0; } }
+    .tabs { display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
+    .tabs button.active { border-color: var(--accent); color: var(--accent); }
+    #output {
+      white-space: pre-wrap;
+      word-wrap: break-word;
+      min-height: 200px;
+      max-height: 60vh;
+      overflow-y: auto;
+      padding: 14px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      font-size: 1rem;
+    }
+    #output:empty::before { content: "Aquí aparecerá el texto del audio."; color: var(--muted); }
+    #output.ts { font-family: ui-monospace, Consolas, monospace; font-size: .9rem; }
+    .actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+    .note { color: var(--muted); font-size: .82rem; margin-top: 10px; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>AudioScribe</h1>
+  <p class="sub">Selecciona un audio .mp4 en castellano y se escribirá abajo tal cual se dice.</p>
+
+  <section class="card">
+    <div class="row">
+      <label for="file" class="btn primary">Seleccionar audio (.mp4)</label>
+      <input id="file" type="file" accept=".mp4,video/mp4,audio/mp4" />
+      <label class="field">Modelo (precisión)
+        <select id="model">
+          <option value="onnx-community/whisper-base">Base · rápido (~80 MB)</option>
+          <option value="onnx-community/whisper-small" selected>Small · recomendado (~250 MB)</option>
+          <option value="onnx-community/whisper-large-v3-turbo">Large v3 Turbo · máxima precisión (~800 MB)</option>
+        </select>
+      </label>
+      <button id="go" disabled>Volver a transcribir</button>
+    </div>
+    <div id="fileInfo"></div>
+    <audio id="player" controls hidden></audio>
+    <div id="work" hidden>
+      <div class="work-head">
+        <span id="spinner" class="spinner"></span>
+        <strong id="workTitle">Preparando…</strong>
+        <span id="workPct"></span>
+      </div>
+      <progress id="bar" max="100" value="0"></progress>
+      <div id="workDetail"></div>
+    </div>
+    <div id="status"></div>
+    <p class="note">La transcripción se hace en tu PC. La primera vez con cada modelo se descarga (necesita internet) y luego queda guardado.</p>
+  </section>
+
+  <section class="card">
+    <div class="tabs">
+      <button id="tabText" class="active">Texto</button>
+      <button id="tabTs">Con marcas de tiempo</button>
+    </div>
+    <div id="output" aria-live="polite"></div>
+    <div class="actions">
+      <button id="copy" disabled>Copiar</button>
+      <button id="dlTxt" disabled>Descargar .txt</button>
+      <button id="dlSrt" disabled>Descargar .srt</button>
+    </div>
+  </section>
+</main>
+
+<script>
+  const $ = (id) => document.getElementById(id);
+  const fileInput = $("file"), player = $("player"), goBtn = $("go");
+  const bar = $("bar"), statusEl = $("status"), output = $("output");
+
+  let currentFile = null;
+  let result = null;
+  let view = "text";
+  let busy = false;
+  let timer = null;
+
+  // Dropping a file onto the page must not open it in another tab.
+  window.addEventListener("dragover", (e) => e.preventDefault());
+  window.addEventListener("drop", (e) => e.preventDefault());
+
+  function setStatus(msg, isError = false) {
+    statusEl.textContent = msg;
+    statusEl.classList.toggle("error", isError);
+  }
+
+  function fmtSize(b) {
+    return b > 1048576 ? (b / 1048576).toFixed(1) + " MB" : (b / 1024).toFixed(0) + " KB";
+  }
+
+  function fmtTime(s, srt = false) {
+    if (s == null || isNaN(s)) s = 0;
+    const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = Math.floor(s % 60);
+    const ms = Math.round((s - Math.floor(s)) * 1000);
+    const pad = (n, l = 2) => String(n).padStart(l, "0");
+    return srt
+      ? `${pad(h)}:${pad(m)}:${pad(sec)},${pad(ms, 3)}`
+      : (h ? `${pad(h)}:` : "") + `${pad(m)}:${pad(sec)}`;
+  }
+
+  fileInput.addEventListener("change", () => {
+    const file = fileInput.files[0];
+    if (!file) return;
+    currentFile = file;
+    $("fileInfo").textContent = `${file.name} · ${fmtSize(file.size)}`;
+    player.src = URL.createObjectURL(file);
+    player.hidden = false;
+    fileInput.value = "";
+    transcribe();
+  });
+
+  goBtn.addEventListener("click", transcribe);
+
+  async function transcribe() {
+    if (!currentFile || busy) return;
+    if (location.protocol === "file:") {
+      setStatus("Abre la página desde http://localhost:3000 (ejecuta «npm start» en la carpeta del proyecto). Abriendo el archivo directamente no puede transcribir.", true);
+      return;
+    }
+    busy = true;
+    goBtn.disabled = true;
+    result = null;
+    output.textContent = "";
+    setExportEnabled(false);
+    setView("text");
+    setStatus("");
+    startWork();
+    showWork({ title: "Subiendo audio…", pct: null, detail: "" });
+    try {
+      const res = await fetch(`/transcribe?model=${encodeURIComponent($("model").value)}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/octet-stream" },
+        body: currentFile,
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error || `El servidor respondió ${res.status}`);
+      }
+      // The server streams one JSON event per line.
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let pending = "";
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        pending += decoder.decode(value, { stream: true });
+        const lines = pending.split("\n");
+        pending = lines.pop();
+        lines.filter(Boolean).forEach((line) => onEvent(JSON.parse(line)));
+      }
+      if (busy) finish(false, "La conexión con el servidor se cortó antes de terminar.");
+    } catch (err) {
+      const msg = err instanceof TypeError
+        ? "No hay conexión con el servidor. Asegúrate de que «npm start» siga abierto."
+        : err.message;
+      finish(false, msg);
+    }
+  }
+
+  // ---- Progress panel ----
+  const work = $("work");
+  let audioSeconds = 0;
+  let t0 = 0, tTranscribe = 0;
+  let workState = { title: "", pct: null, detail: "" };
+
+  function startWork() {
+    t0 = Date.now();
+    tTranscribe = 0;
+    work.hidden = false;
+    work.classList.remove("ok", "fail");
+    output.classList.add("live");
+    clearInterval(timer);
+    timer = setInterval(paintWork, 1000);
+  }
+
+  function showWork(patch) {
+    Object.assign(workState, patch);
+    paintWork();
+  }
+
+  function paintWork() {
+    $("workTitle").textContent = workState.title;
+    const pct = workState.pct;
+    $("workPct").textContent = pct == null ? "" : `${Math.floor(pct)}%`;
+    if (pct == null) bar.removeAttribute("value"); // indeterminate bar
+    else bar.value = pct;
+    const elapsed = `${fmtTime((Date.now() - t0) / 1000)} transcurrido`;
+    let eta = "";
+    if (tTranscribe && pct > 0 && pct < 100) {
+      const spent = (Date.now() - tTranscribe) / 1000;
+      eta = ` · faltan ~${fmtTime(spent * (100 - pct) / pct)}`;
+    }
+    $("workDetail").textContent = [workState.detail, elapsed + eta].filter(Boolean).join(" · ");
+  }
+
+  const downloads = new Map();
+  function onEvent(data) {
+    switch (data.type) {
+      case "download":
+        if (data.status === "progress" && data.total) {
+          downloads.set(data.file, { loaded: data.loaded, total: data.total });
+          let loaded = 0, total = 0;
+          downloads.forEach((f) => { loaded += f.loaded; total += f.total; });
+          showWork({
+            title: "Descargando modelo (solo la primera vez)…",
+            pct: (loaded / total) * 100,
+            detail: `${fmtSize(loaded)} / ${fmtSize(total)}`,
+          });
+        }
+        break;
+      case "audio":
+        audioSeconds = data.seconds;
+        break;
+      case "status":
+        downloads.clear();
+        showWork({ title: data.message, pct: null, detail: `Audio de ${fmtTime(audioSeconds)}` });
+        break;
+      case "progress":
+        if (!tTranscribe) tTranscribe = Date.now();
+        showWork({
+          title: "Transcribiendo audio a texto…",
+          pct: (data.done / data.total) * 100,
+          detail: `Parte ${Math.min(data.done + 1, data.total)} de ${data.total}`,
+        });
+        break;
+      case "partial":
+        output.textContent += data.text;
+        output.scrollTop = output.scrollHeight;
+        break;
+      case "done":
+        result = data.result;
+        render();
+        setExportEnabled(true);
+        finish(true);
+        break;
+      case "error":
+        finish(false, "Error: " + data.message);
+        break;
+    }
+  }
+
+  function finish(ok, errorMsg) {
+    busy = false;
+    clearInterval(timer);
+    output.classList.remove("live");
+    goBtn.disabled = !currentFile;
+    const total = fmtTime((Date.now() - t0) / 1000);
+    work.classList.add(ok ? "ok" : "fail");
+    $("workTitle").textContent = ok ? "Transcripción completa" : "No se pudo transcribir";
+    $("workPct").textContent = ok ? "100%" : "";
+    if (ok) bar.value = 100;
+    $("workDetail").textContent = ok ? `Listo en ${total}. El texto está abajo.` : "";
+    if (errorMsg) setStatus(errorMsg, true);
+  }
+
+  function segments() {
+    return (result?.chunks || []).map((c) => ({
+      start: c.timestamp?.[0] ?? 0,
+      end: c.timestamp?.[1] ?? c.timestamp?.[0] ?? 0,
+      text: c.text.trim(),
+    })).filter((s) => s.text);
+  }
+
+  function plainText() {
+    return (result?.text || "").trim();
+  }
+
+  function timestampedText() {
+    return segments().map((s) => `[${fmtTime(s.start)} → ${fmtTime(s.end)}]  ${s.text}`).join("\n");
+  }
+
+  function srtText() {
+    return segments().map((s, i) => `${i + 1}\n${fmtTime(s.start, true)} --> ${fmtTime(s.end, true)}\n${s.text}\n`).join("\n");
+  }
+
+  function render() {
+    if (!result) return;
+    output.classList.toggle("ts", view === "ts");
+    output.textContent = view === "ts" ? timestampedText() : plainText();
+  }
+
+  function setView(v) {
+    view = v;
+    $("tabText").classList.toggle("active", v === "text");
+    $("tabTs").classList.toggle("active", v === "ts");
+    render();
+  }
+  $("tabText").addEventListener("click", () => setView("text"));
+  $("tabTs").addEventListener("click", () => setView("ts"));
+
+  function setExportEnabled(on) {
+    ["copy", "dlTxt", "dlSrt"].forEach((id) => ($(id).disabled = !on));
+  }
+
+  function baseName() {
+    return (currentFile?.name || "transcripcion").replace(/\.[^.]+$/, "");
+  }
+
+  function download(content, ext) {
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([content], { type: "text/plain;charset=utf-8" }));
+    a.download = `${baseName()}.${ext}`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  }
+
+  $("copy").addEventListener("click", async () => {
+    await navigator.clipboard.writeText(view === "ts" ? timestampedText() : plainText());
+    setStatus("Copiado al portapapeles.");
+  });
+  $("dlTxt").addEventListener("click", () => download(view === "ts" ? timestampedText() : plainText(), "txt"));
+  $("dlSrt").addEventListener("click", () => download(srtText(), "srt"));
+</script>
+</body>
+</html>
